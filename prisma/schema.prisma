@@ -1,0 +1,115 @@
+// Local development schema (SQLite). For production Postgres see schema.postgres.prisma.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(cuid())
+  // Singleton owner claim. The unique value closes the check-then-create OAuth race.
+  ownerKey        String          @unique @default("owner")
+  googleSub       String          @unique
+  email           String          @unique
+  name            String?
+  picture         String?
+  channelId       String?
+  channelTitle    String?
+  // AES-256-GCM encrypted (see src/lib/crypto.ts). Never stored in plaintext.
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  grantedScopes   String          @default("")
+  // READ | APPROVAL | WRITE
+  permissionMode  String          @default("READ")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  sessions        Session[]
+  changes         PendingChange[]
+  logs            ActivityLog[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  // SHA-256 of the random session token; the raw token only lives in the cookie.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OAuthState {
+  state      String    @id
+  verifier   String
+  expiresAt  DateTime
+  consumedAt DateTime?
+}
+
+model RateLimitBucket {
+  key       String   @id
+  hitsJson  String
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+model McpTokenUse {
+  tokenHash String    @id
+  usedAt    DateTime  @default(now())
+  expiresAt DateTime?
+}
+
+model McpCredential {
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  clientId   String
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+
+  @@index([clientId])
+  @@index([expiresAt])
+}
+
+model PendingChange {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // video_metadata | playlist_create | playlist_update | playlist_add_video
+  kind       String
+  targetId   String?
+  summary    String
+  beforeJson String
+  afterJson  String
+  // PENDING | EXECUTING | EXECUTED | REJECTED | FAILED
+  status     String    @default("PENDING")
+  // ui | mcp
+  source     String    @default("ui")
+  createdAt  DateTime  @default(now())
+  decidedAt  DateTime?
+  executedAt DateTime?
+  error      String?
+
+  @@index([userId, status])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  detail    String
+  source    String   @default("ui")
+  ok        Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

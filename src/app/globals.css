@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 248 250 252;
+  --card: 255 255 255;
+  --line: 226 232 240;
+  --fg: 15 23 42;
+  --muted: 100 116 139;
+  --brand: 79 70 229;
+  --brand-fg: 255 255 255;
+  --ok: 22 163 74;
+  --warn: 217 119 6;
+  --danger: 220 38 38;
+}
+
+.dark {
+  --bg: 11 15 25;
+  --card: 21 27 40;
+  --line: 40 49 66;
+  --fg: 226 232 240;
+  --muted: 148 163 184;
+  --brand: 129 140 248;
+  --brand-fg: 11 15 25;
+  --ok: 74 222 128;
+  --warn: 251 191 36;
+  --danger: 248 113 113;
+}
+
+html {
+  color-scheme: light dark;
+}
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-bg text-fg antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-line bg-card p-4 shadow-sm;
+  }
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-line bg-card px-4 text-sm font-medium transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-transparent bg-brand text-brand-fg;
+  }
+  .btn-danger {
+    @apply border-transparent bg-danger text-white;
+  }
+  .input {
+    @apply min-h-[44px] w-full rounded-xl border border-line bg-bg px-3 text-sm outline-none focus:ring-2 focus:ring-brand;
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-muted;
+  }
+  .pill {
+    @apply inline-flex items-center rounded-full border border-line px-2 py-0.5 text-xs text-muted;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid rgb(var(--brand));
+  outline-offset: 2px;
+}

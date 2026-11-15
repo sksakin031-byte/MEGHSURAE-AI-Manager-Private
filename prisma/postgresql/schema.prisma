@@ -1,0 +1,112 @@
+// Production schema (PostgreSQL, e.g. Neon / Supabase free tiers - check their current limits).
+// Usage:
+//   DATABASE_URL="postgresql://user:pass@host/db?sslmode=require"
+//   npm run db:migrate:pg && npm run db:generate:pg && next build
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String          @id @default(cuid())
+  // Singleton owner claim. The unique value closes the check-then-create OAuth race.
+  ownerKey        String          @unique @default("owner")
+  googleSub       String           @unique
+  email           String          @unique
+  name            String?
+  picture         String?
+  channelId       String?
+  channelTitle    String?
+  accessTokenEnc  String?
+  refreshTokenEnc String?
+  tokenExpiresAt  DateTime?
+  grantedScopes   String          @default("")
+  permissionMode  String          @default("READ")
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  sessions        Session[]
+  changes         PendingChange[]
+  logs            ActivityLog[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model OAuthState {
+  state     String   @id
+  verifier  String
+  expiresAt DateTime
+  consumedAt DateTime?
+}
+
+model RateLimitBucket {
+  key       String   @id
+  hitsJson  String
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+model McpTokenUse {
+  tokenHash String   @id
+  usedAt    DateTime @default(now())
+  expiresAt DateTime?
+}
+
+model McpCredential {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  clientId   String
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+
+  @@index([clientId])
+  @@index([expiresAt])
+}
+
+model PendingChange {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind       String
+  targetId   String?
+  summary    String
+  beforeJson String
+  afterJson  String
+  status     String    @default("PENDING")
+  source     String    @default("ui")
+  createdAt  DateTime  @default(now())
+  decidedAt  DateTime?
+  executedAt DateTime?
+  error      String?
+
+  @@index([userId, status])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  detail    String
+  source    String   @default("ui")
+  ok        Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+}

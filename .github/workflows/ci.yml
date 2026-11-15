@@ -1,0 +1,26 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+        env:
+          # Dummy values so the build can run; no real credentials are needed or used in CI.
+          DATABASE_URL: "file:./ci.db"
+          APP_URL: "http://localhost:3000"
+          GOOGLE_CLIENT_ID: "ci-client-id.apps.googleusercontent.com"
+          GOOGLE_CLIENT_SECRET: "ci-client-secret"
+          TOKEN_ENCRYPTION_KEY: "ci-only-ci-only-ci-only-ci-only-ci-only"
