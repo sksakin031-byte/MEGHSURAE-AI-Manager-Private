@@ -46,6 +46,39 @@ describe("remaining security hardening", () => {
     expect(permissions).toContain("Only the signed-in user can approve");
     expect(read("src/mcp/http.ts")).toContain("authenticateMcpCredential");
   });
+  it("validates browser origins before issuing or revoking MCP credentials", () => {
+    const route = read("src/app/api/mcp/token/route.ts");
+    expect(route).toContain('import { appOrigin, env } from "@/lib/env"');
+    expect(route).toContain("function originAllowed");
+    expect(route).toContain("return !origin || origin === appOrigin()");
+    expect(route).toContain("Cross-origin request blocked.");
+  });
+  it("serializes playlist additions and rechecks duplicate state at execution", () => {
+    const changes = read("src/services/changes.ts");
+    expect(changes).toContain("withPlaylistAddLock");
+    expect(changes).toContain("assertNoConcurrentPlaylistAdd");
+    expect(changes).toContain("listPlaylistVideoIds(userId, c.targetId)");
+    expect(changes).toContain('status: { in: ["PENDING", "EXECUTING"] }');
+  });
+  it("rejects a change with a status-conditional atomic update", () => {
+    const changes = read("src/services/changes.ts");
+    expect(changes).toContain("const rejected = await db.pendingChange.updateMany");
+    expect(changes).toContain('status: "PENDING"');
+    expect(changes).toContain("if (rejected.count !== 1)");
+    expect(changes).toContain("findUniqueOrThrow");
+  });
+  it("allows every persisted change status through the Changes API filter", () => {
+    const route = read("src/app/api/changes/route.ts");
+    expect(route).toContain('["PENDING", "EXECUTING", "EXECUTED", "REJECTED", "FAILED", "UNCERTAIN"]');
+  });
+  it("uses an explicit CSP and removes the custom inline theme script", () => {
+    const config = read("next.config.ts");
+    const layout = read("src/app/layout.tsx");
+    expect(config).toContain("default-src 'self'");
+    expect(config).toContain("object-src 'none'");
+    expect(config).toContain("connect-src 'self'");
+    expect(layout).not.toContain("dangerouslySetInnerHTML");
+  });
 });
 
 describe("serialized limiter contention model", () => {

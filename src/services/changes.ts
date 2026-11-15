@@ -28,6 +28,21 @@ export function toRecord(c: PendingChange): ChangeRecord {
 }
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const playlistAddLocks = new Map<string, Promise<void>>();
+
+async function withPlaylistAddLock<T>(key: string, work: () => Promise<T>): Promise<T> {
+  const previous = playlistAddLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  playlistAddLocks.set(key, current);
+  await previous.catch(() => undefined);
+  try {
+    return await work();
+  } finally {
+    release();
+    if (playlistAddLocks.get(key) === current) playlistAddLocks.delete(key);
+  }
+}
 
 /** Always read the permission mode fresh from the database (the session object could be stale). */
 async function freshMode(userId: string) {
@@ -111,6 +126,24 @@ async function assertNoDrift(userId: string, c: PendingChange): Promise<void> {
     for (const k of Object.keys(before)) {
       if (!same((p as unknown as Json)[k], before[k])) throw conflict(`The playlist's ${k} changed on YouTube after this proposal. Create a new proposal.`);
     }
+  } else if (c.kind === "playlist_add_video") {
+    const after = JSON.parse(c.afterJson) as Json;
+    const ids = await yt.listPlaylistVideoIds(userId, c.targetId);
+    if (ids.includes(after.videoId as string)) throw conflict("That video is already in the playlist or another change applied it first.");
+  }
+}
+
+async function assertNoConcurrentPlaylistAdd(userId: string, c: PendingChange): Promise<void> {
+  if (c.kind !== "playlist_add_video" || !c.targetId) return;
+  const after = JSON.parse(c.afterJson) as Json;
+  const active = await db.pendingChange.findMany({
+    where: { userId, kind: "playlist_add_video", targetId: c.targetId, status: { in: ["PENDING", "EXECUTING"] } },
+    select: { id: true, afterJson: true },
+  });
+  for (const other of active) {
+    if (other.id === c.id) continue;
+    const otherAfter = JSON.parse(other.afterJson) as Json;
+    if (otherAfter.videoId === after.videoId) throw conflict("Another pending change is already adding this video to the playlist.");
   }
 }
 
@@ -153,8 +186,14 @@ export async function executeChange(
   if (claimed.count !== 1) throw conflict("This change is already being processed.");
 
   try {
-    await assertNoDrift(user.id, change);
-    const msg = await run(user.id, change);
+    const execute = async () => {
+      await assertNoConcurrentPlaylistAdd(user.id, change);
+      await assertNoDrift(user.id, change);
+      return run(user.id, change);
+    };
+    const msg = change.kind === "playlist_add_video"
+      ? await withPlaylistAddLock(`${user.id}:${change.targetId}:${JSON.parse(change.afterJson).videoId}`, execute)
+      : await execute();
     const done = await db.pendingChange.update({ where: { id: changeId }, data: { status: "EXECUTED", executedAt: new Date(), error: null } });
     invalidateUserCache(user.id);
     await logActivity(user.id, "change.executed", `${change.summary} — ${msg}`, opts.actor === "mcp" ? "mcp" : "ui");
@@ -175,8 +214,12 @@ export async function executeChange(
 export async function rejectChange(user: SessionUser, changeId: string): Promise<ChangeRecord> {
   const change = await db.pendingChange.findFirst({ where: { id: changeId, userId: user.id } });
   if (!change) throw notFound("Change not found.");
-  if (change.status !== "PENDING") throw conflict(`This change is already ${change.status.toLowerCase()}.`);
-  const row = await db.pendingChange.update({ where: { id: changeId }, data: { status: "REJECTED", decidedAt: new Date() } });
+  const rejected = await db.pendingChange.updateMany({
+    where: { id: changeId, userId: user.id, status: "PENDING" },
+    data: { status: "REJECTED", decidedAt: new Date() },
+  });
+  if (rejected.count !== 1) throw conflict(`This change is already ${change.status.toLowerCase()}.`);
+  const row = await db.pendingChange.findUniqueOrThrow({ where: { id: changeId } });
   await logActivity(user.id, "change.rejected", change.summary, "ui");
   return toRecord(row);
 }

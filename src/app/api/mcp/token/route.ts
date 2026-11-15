@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { env } from "@/lib/env";
+import { appOrigin, env } from "@/lib/env";
 import { safeEqual } from "@/lib/crypto";
 import { databaseRateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/api";
@@ -14,9 +14,16 @@ function masterAuthorized(req: NextRequest): boolean {
   return Boolean(configured && bearer && safeEqual(bearer, configured));
 }
 
+function originAllowed(req: NextRequest): boolean {
+  const origin = req.headers.get("origin");
+  // Non-browser MCP clients normally omit Origin; browsers must be same-origin.
+  return !origin || origin === appOrigin();
+}
+
 async function guard(req: NextRequest): Promise<NextResponse | null> {
   const e = env();
   if (!e.MCP_AUTH_TOKEN) return NextResponse.json({ error: { code: "disabled", message: "MCP is disabled." } }, { status: 503 });
+  if (!originAllowed(req)) return NextResponse.json({ error: { code: "forbidden", message: "Cross-origin request blocked." } }, { status: 403 });
   if (!(await databaseRateLimit(`mcp-credential:${clientIp(req)}`, 20, 60_000)).ok) {
     return NextResponse.json({ error: { code: "rate_limited", message: "Too many credential requests." } }, { status: 429 });
   }

@@ -3,7 +3,7 @@ import { route, readJson } from "@/lib/api";
 import { applyDirect, listChanges, proposeChange } from "@/services/changes";
 import type { ChangeStatus } from "@/types";
 
-const STATUSES = ["PENDING", "EXECUTED", "REJECTED", "FAILED"] as const;
+const STATUSES = ["PENDING", "EXECUTING", "EXECUTED", "REJECTED", "FAILED", "UNCERTAIN"] as const;
 
 export const GET = route({}, async ({ req, user }) => {
   const s = req.nextUrl.searchParams.get("status");
